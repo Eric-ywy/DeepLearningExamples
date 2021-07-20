@@ -14,6 +14,7 @@
 
 import torch.nn as nn
 from monai.losses import DiceLoss, FocalLoss
+# from segmentation_models_pytorch.losses import FocalLoss as FocalLoss_v2
 
 
 class Loss(nn.Module):

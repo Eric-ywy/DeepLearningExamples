@@ -35,7 +35,9 @@ from utils.utils import (
 
 from models.loss import Loss
 from models.metrics import Dice
-from models.unet import UNet
+# from models.unet import UNet
+from segmentation_models_pytorch import Unet
+
 
 
 class NNUnet(pl.LightningModule):
@@ -73,7 +75,7 @@ class NNUnet(pl.LightningModule):
         return self.tta_inference(img) if self.args.tta else self.do_inference(img)
 
     def training_step(self, batch, batch_idx):
-        img, lbl = self.get_train_data(batch)
+        img, lbl = self.get_reshaped_data(batch)
         pred = self.model(img)
         loss = self.loss(pred, lbl)
         return loss
@@ -81,8 +83,12 @@ class NNUnet(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         if self.current_epoch < self.args.skip_first_n_eval:
             return None
-        img, lbl = batch["image"], batch["label"]
+        img, lbl = batch["image"], batch["label"]#self.get_reshaped_data(batch)
         pred = self._forward(img)
+
+        pred = torch.transpose(pred.squeeze(0), 0, 1)
+        lbl = torch.transpose(lbl.squeeze(0), 0, 1)
+
         loss = self.loss(pred, lbl)
         self.dice.update(pred, lbl[:, 0])
         return {"val_loss": loss}
@@ -116,20 +122,35 @@ class NNUnet(pl.LightningModule):
             self.save_mask(final_pred)
 
     def build_nnunet(self):
-        in_channels, n_class, kernels, strides, self.patch_size = get_unet_params(self.args)
+        encoder_name, depth, encoder_weights_name, decoder_channels, in_channels, n_class, self.patch_size = get_unet_params(self.args)
         self.n_class = n_class - 1
-        self.model = UNet(
+        # encoder_name = " "
+        # depth = 5
+        # encoder_weights_name = "imagenet"
+        # decoder_channels = [256, 128, 64, 32, 16]
+
+        """ pls referring to https://smp.readthedocs.io/en/latest/models.html for model args """
+        self.model = Unet(
+            encoder_name=encoder_name,
+            encoder_depth=depth,
+            encoder_weights=encoder_weights_name,
+            decoder_channels=decoder_channels,
             in_channels=in_channels,
-            n_class=n_class,
-            kernels=kernels,
-            strides=strides,
-            dimension=self.args.dim,
-            residual=self.args.residual,
-            normalization_layer=self.args.norm,
-            negative_slope=self.args.negative_slope,
+            classes=n_class,
         )
-        if is_main_process():
-            print(f"Filters: {self.model.filters},\nKernels: {kernels}\nStrides: {strides}")
+
+        # self.model = UNet(
+        #     in_channels=in_channels,
+        #     n_class=n_class,
+        #     kernels=kernels,
+        #     strides=strides,
+        #     dimension=self.args.dim,
+        #     residual=self.args.residual,
+        #     normalization_layer=self.args.norm,
+        #     negative_slope=self.args.negative_slope,
+        # )
+        # if is_main_process():
+        #     print(f"Filters: {self.model.filters},\nKernels: {kernels}\nStrides: {strides}")
 
     def do_inference(self, image):
         if self.args.dim == 3:
@@ -247,7 +268,7 @@ class NNUnet(pl.LightningModule):
         np.save(os.path.join(self.save_dir, fname), pred, allow_pickle=False)
         self.test_idx += 1
 
-    def get_train_data(self, batch):
+    def get_reshaped_data(self, batch):
         img, lbl = batch["image"], batch["label"]
         if self.args.dim == 2 and self.args.data2d_dim == 3:
             img, lbl = layout_2d(img, lbl)

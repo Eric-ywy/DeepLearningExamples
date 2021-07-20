@@ -35,10 +35,16 @@ def set_cuda_devices(args):
 
 
 def verify_ckpt_path(args):
+    if not os.path.exists(args.results):
+        os.makedirs(args.results)
+
     resume_path = os.path.join(args.results, "checkpoints", "last.ckpt")
     ckpt_path = resume_path if args.resume_training and os.path.exists(resume_path) else args.ckpt_path
     return ckpt_path
 
+
+def get_decoder_channels(args):
+    return [int(item) for item in args.decoder_channels.split(",")]
 
 def get_task_code(args):
     return f"{args.task}_{args.dim}d"
@@ -97,23 +103,43 @@ def float_0_1(value):
 
 def get_unet_params(args):
     config = get_config_file(args)
-    patch_size, spacings = config["patch_size"], config["spacings"]
-    strides, kernels, sizes = [], [], patch_size[:]
-    while True:
-        spacing_ratio = [spacing / min(spacings) for spacing in spacings]
-        stride = [2 if ratio <= 2 and size >= 8 else 1 for (ratio, size) in zip(spacing_ratio, sizes)]
-        kernel = [3 if ratio <= 2 else 1 for ratio in spacing_ratio]
-        if all(s == 1 for s in stride):
-            break
-        sizes = [i / j for i, j in zip(sizes, stride)]
-        spacings = [i * j for i, j in zip(spacings, stride)]
-        kernels.append(kernel)
-        strides.append(stride)
-        if len(strides) == 5:
-            break
-    strides.insert(0, len(spacings) * [1])
-    kernels.append(len(spacings) * [3])
-    return config["in_channels"], config["n_class"], kernels, strides, patch_size
+    patch_size = config["patch_size"]
+    
+    encoder_name = args.encoder_name
+    depth = args.encoder_depth
+    encoder_weights = args.encoder_pretrained_source
+    decoder_channels = get_decoder_channels(args)
+
+    return encoder_name, depth, encoder_weights, decoder_channels, config["in_channels"], config["n_class"], patch_size
+
+
+def get_fpath_pairs(data_path, execmode):
+
+    datadirpath = ""
+    if execmode == "training" or execmode == "val":
+        datadirpath = os.path.join(data_path, "Train")
+    elif execmode == "test":
+        datadirpath = os.path.join(data_path, "Test")
+    else:
+        raise ValueError(f"pls type correct execmode in choices [training, val, test]")
+    
+    lbltxtfilepath = os.path.join(datadirpath, "Label/Labels.txt")
+
+    filedesc = np.genfromtxt(lbltxtfilepath, dtype=np.int32,  delimiter='\t', skip_header=1, usecols=[0, 1])
+    folder_pairs = []
+    for f_index, def_flag in filedesc:
+        img_path = os.path.join(datadirpath, "%04d.PNG" % f_index)
+        lbl_path = ""
+        if def_flag:
+            lbl_path = os.path.join(datadirpath, "Label/%04d_label.PNG" % f_index)
+
+        pathpair = {"image": img_path, "label": lbl_path}
+        folder_pairs += [pathpair]
+    
+    return folder_pairs
+
+
+
 
 
 def log(logname, dice, results="/results"):
@@ -179,10 +205,16 @@ def get_main_args(strings=None):
         default="train",
         help="Execution mode to run the model",
     )
+
+    arg("--encoder_name", type=str, default="resnet34", help="encoders are listed in https://smp.readthedocs.io/en/latest/encoders.html")
+    arg("--encoder_depth", type=positive_int, default=5, help="a number of downsampled stages used in encoder with range [3, 5]")
+    arg("--encoder_pretrained_source", type=str, default=None, help="encoder weights are list in smp link.")
+    arg("--decoder_channels", type=str, default="256,128,64,32,16", help="delimited list of channels in decoder")
+    
     arg("--data", type=str, default="/data", help="Path to data directory")
     arg("--results", type=str, default="/results", help="Path to results directory")
     arg("--logname", type=str, default=None, help="Name of dlloger output")
-    arg("--task", type=str, help="Task number. MSD uses numbers 01-10")
+    arg("--task", type=str, default="01", help="Task number. MSD uses numbers 01-10")
     arg("--gpus", type=non_negative_int, default=1, help="Number of gpus")
     arg("--learning_rate", type=float, default=0.001, help="Learning rate")
     arg("--gradient_clip_val", type=float, default=0, help="Gradient clipping norm value")
@@ -201,14 +233,14 @@ def get_main_args(strings=None):
     arg("--fold", type=non_negative_int, default=0, help="Fold number")
     arg("--patience", type=positive_int, default=100, help="Early stopping patience")
     arg("--lr_patience", type=positive_int, default=70, help="Patience for ReduceLROnPlateau scheduler")
-    arg("--batch_size", type=positive_int, default=2, help="Batch size")
-    arg("--val_batch_size", type=positive_int, default=4, help="Validation batch size")
+    arg("--batch_size", type=positive_int, default=64, help="Batch size")
+    arg("--val_batch_size", type=positive_int, default=64, help="Validation batch size")
     arg("--steps", nargs="+", type=positive_int, required=False, help="Steps for multistep scheduler")
     arg("--profile", action="store_true", help="Run dlprof profiling")
     arg("--momentum", type=float, default=0.99, help="Momentum factor")
-    arg("--weight_decay", type=float, default=0.0001, help="Weight decay (L2 penalty)")
+    arg("--weight_decay", type=float, default=0.00001, help="Weight decay (L2 penalty)")
     arg("--save_preds", action="store_true", help="Enable prediction saving")
-    arg("--dim", type=int, choices=[2, 3], default=3, help="UNet dimension")
+    arg("--dim", type=int, choices=[2, 3], default=2, help="UNet dimension")
     arg("--resume_training", action="store_true", help="Resume training from the last checkpoint")
     arg("--factor", type=float, default=0.3, help="Scheduler factor")
     arg("--num_workers", type=non_negative_int, default=8, help="Number of subprocesses to use for data loading")

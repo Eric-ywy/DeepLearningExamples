@@ -1,6 +1,10 @@
 git+https://github.com/NVIDIA/dllogger
 nibabel==3.1.1
 joblib==0.16.0
+torchvision>=0.3.0
+pretrainedmodels==0.7.4
+efficientnet-pytorch==0.6.3
+timm==0.3.2
 scikit-learn==0.23.2
 pynvml==8.0.4
 pillow==6.2.0

@@ -20,8 +20,14 @@ from subprocess import call
 parser = ArgumentParser(ArgumentDefaultsHelpFormatter)
 parser.add_argument("--data", type=str, required=True, help="Path to data")
 parser.add_argument("--task", type=str, default="01", help="Path to data")
-parser.add_argument("--fold", type=int, required=True, choices=[0, 1, 2, 3, 4], help="Fold number")
+parser.add_argument("--fold", type=int, default=0, choices=[0, 1, 2, 3, 4], help="Fold number")
 parser.add_argument("--dim", type=int, required=True, help="Dimension of UNet")
+parser.add_argument("--results", type=str, default="/results", help="Path to results directory")
+
+parser.add_argument("--encoder_name", type=str, default="resnet34", help="encoders are listed in https://smp.readthedocs.io/en/latest/encoders.html")
+parser.add_argument("--encoder_depth", type=int, default=5, help="a number of downsampled stages used in encoder with range [3, 5]")
+parser.add_argument("--decoder_channels", type=str, default="256,128,64,32,16", help="delimited list of channels in decoder")
+
 parser.add_argument("--ckpt_path", type=str, required=True, help="Path to checkpoint")
 parser.add_argument("--batch_size", type=int, default=4, help="Batch size")
 parser.add_argument("--amp", action="store_true", help="Enable automatic mixed precision")
@@ -35,7 +41,11 @@ if __name__ == "__main__":
     cmd = f"python {path_to_main} --exec_mode predict --task {args.task} --gpus 1 "
     cmd += f"--data {args.data} "
     cmd += f"--dim {args.dim} "
-    cmd += f"--fold {args.fold} "
+    cmd += f"--encoder_name {args.encoder_name} --encoder_depth {args.encoder_depth} "
+    cmd += f"--decoder_channels {args.decoder_channels} "
+    cmd += f"--results {args.results} "
+    
+    # cmd += f"--fold {args.fold} "
     cmd += f"--ckpt_path {args.ckpt_path} "
     cmd += f"--val_batch_size {args.batch_size} "
     cmd += "--amp " if args.amp else ""

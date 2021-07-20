@@ -153,10 +153,13 @@ class EvalPipeline(Pipeline):
             seed=kwargs["seed"],
             shuffle=False,
         )
+        self.dim = kwargs["dim"]
 
     def define_graph(self):
         img, lbl = self.input_x(name="ReaderX").gpu(), self.input_y(name="ReaderY").gpu()
         img, lbl = fn.reshape(img, layout="CDHW"), fn.reshape(lbl, layout="CDHW")
+        # if self.dim == 2:
+        #      img, lbl = fn.transpose(img, perm=(1, 0, 2, 3)), fn.transpose(lbl, perm=(1, 0, 2, 3))
         return img, lbl
 
 
@@ -309,7 +312,7 @@ def fetch_dali_loader(imgs, lbls, batch_size, mode, **kwargs):
     elif mode == "eval":
         pipeline = EvalPipeline
         output_map = ["image", "label"]
-        dynamic_shape = True
+        dynamic_shape = True 
     elif mode == "bermuda":
         pipeline = BermudaPipeline
         output_map = ["image", "label"]
